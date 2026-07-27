@@ -1,0 +1,71 @@
+# SMTP Mail Service (Render)
+
+Small reusable Node.js SMTP mail API you can deploy on Render and call from any app/backend.
+
+## 1) Setup locally
+
+1. Copy `.env.example` to `.env`.
+2. Fill SMTP credentials from your provider (Resend SMTP, Brevo, Mailgun, SendGrid SMTP, etc).
+3. Install and run:
+
+```bash
+npm install
+npm start
+```
+
+Health check:
+
+```bash
+GET http://localhost:3000/health
+```
+
+## 2) Render deployment
+
+Create a new **Web Service** from `mail-service` and set:
+
+- Runtime: `Node`
+- Build Command: `npm install`
+- Start Command: `npm start`
+
+Add environment variables from `.env.example` in Render dashboard.
+
+## 3) API
+
+### `POST /send-mail`
+
+Headers:
+
+- `Content-Type: application/json`
+- `x-api-key: <MAIL_API_KEY>` (required only if `MAIL_API_KEY` is set)
+
+Body:
+
+```json
+{
+  "to": "user@example.com",
+  "subject": "Project Invite",
+  "text": "You were invited to our app",
+  "html": "<b>You were invited to our app</b>",
+  "fromName": "Your App Name"
+}
+```
+
+Rules:
+
+- Required: `to`, `subject`, and at least one of `text` or `html`.
+- Response success: `{ "ok": true, "messageId": "..." }`.
+
+## 4) Example client call
+
+```bash
+curl -X POST https://<your-render-service>.onrender.com/send-mail \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <MAIL_API_KEY>" \
+  -d "{\"to\":\"user@example.com\",\"subject\":\"Hello\",\"text\":\"Test mail\"}"
+```
+
+## 5) Recommended provider notes
+
+- Use a verified domain and sender address to improve deliverability.
+- Keep `MAIL_API_KEY` set in production.
+- Do not expose SMTP credentials in mobile apps directly; call this service from trusted backend logic when possible.
