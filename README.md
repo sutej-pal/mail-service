@@ -1,11 +1,13 @@
-# SMTP Mail Service (Render)
+# Mail Service (Render)
 
-Small reusable Node.js SMTP mail API you can deploy on Render and call from any app/backend.
+Small reusable Node.js mail API you can deploy on Render and call from any app/backend.
+
+**Render Free note:** outbound SMTP ports `25` / `465` / `587` are blocked. Use `RESEND_API_KEY` (HTTPS) on Free, or upgrade the instance to use SMTP.
 
 ## 1) Setup locally
 
 1. Copy `.env.example` to `.env`.
-2. Fill SMTP credentials from your provider (Resend SMTP, Brevo, Mailgun, SendGrid SMTP, etc).
+2. Prefer `RESEND_API_KEY` + `MAIL_FROM` (HTTPS). SMTP vars work on hosts that allow outbound SMTP.
 3. Install and run:
 
 ```bash
@@ -28,6 +30,14 @@ Create a new **Web Service** from `mail-service` and set:
 - Start Command: `npm start`
 
 Add environment variables from `.env.example` in Render dashboard.
+
+Minimum for Free tier:
+
+| Key | Value |
+|---|---|
+| `MAIL_API_KEY` | Shared secret (Android `MAIL_SERVICE_API_KEY`) |
+| `MAIL_FROM` | `onboarding@resend.dev` (test) or your verified domain sender |
+| `RESEND_API_KEY` | From [resend.com](https://resend.com) |
 
 ## 3) API
 
@@ -66,6 +76,7 @@ curl -X POST https://<your-render-service>.onrender.com/send-mail \
 
 ## 5) Recommended provider notes
 
+- On Render Free, set `RESEND_API_KEY` — do not rely on Gmail SMTP (`smtp.gmail.com:465`).
 - Use a verified domain and sender address to improve deliverability.
 - Keep `MAIL_API_KEY` set in production.
-- Do not expose SMTP credentials in mobile apps directly; call this service from trusted backend logic when possible.
+- Do not expose SMTP / Resend credentials in mobile apps; call this service with the shared API key only.
