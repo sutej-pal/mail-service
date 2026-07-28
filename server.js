@@ -101,6 +101,79 @@ app.get("/health", (_req, res) => {
   });
 });
 
+/**
+ * Browser invite bridge:
+ * 1) Try open the installed app (intent:// / splitease://).
+ * 2) If still on the page, fall back to Play Store with invite_token referrer
+ *    so first launch can recover the token via Play Install Referrer API.
+ */
+app.get("/invite/:token", (req, res) => {
+  const token = String(req.params.token || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(token)) {
+    return res.status(400).type("html").send(
+      "<!DOCTYPE html><html><body><p>Invalid invite link.</p></body></html>",
+    );
+  }
+
+  const intentUrl =
+    `intent://invite/${token}#Intent;scheme=splitease;package=com.splitease.app;end`;
+  const customUrl = `splitease://invite/${token}`;
+  const playUrl =
+    "https://play.google.com/store/apps/details?id=com.splitease.app&referrer=" +
+    encodeURIComponent(`invite_token=${token}`);
+
+  res
+    .status(200)
+    .type("html")
+    .send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open SplitEase</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #1e1b4b; background: #e8eafe; }
+    a.btn { display: inline-block; margin-top: 1rem; margin-right: 0.75rem; padding: 0.85rem 1.25rem;
+      background: #4f46e5; color: #fff; text-decoration: none; border-radius: 12px; font-weight: 600; }
+    a.btn-secondary { background: #fff; color: #4f46e5; border: 2px solid #4f46e5; }
+    p { line-height: 1.5; }
+    .muted { color: #5c5878; }
+  </style>
+  <script>
+    (function () {
+      var intentUrl = ${JSON.stringify(intentUrl)};
+      var customUrl = ${JSON.stringify(customUrl)};
+      var playUrl = ${JSON.stringify(playUrl)};
+      var leftForApp = false;
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") leftForApp = true;
+      });
+      window.addEventListener("pagehide", function () { leftForApp = true; });
+      try { window.location.replace(intentUrl); } catch (e) {}
+      setTimeout(function () {
+        if (leftForApp) return;
+        try { window.location.href = customUrl; } catch (e2) {}
+      }, 400);
+      setTimeout(function () {
+        if (leftForApp) return;
+        try { window.location.href = playUrl; } catch (e3) {}
+      }, 1600);
+    })();
+  </script>
+</head>
+<body>
+  <h1>SplitEase</h1>
+  <p>Opening the invite in the SplitEase app…</p>
+  <p class="muted">Don’t have the app? We’ll send you to Google Play — after install, the invite opens automatically.</p>
+  <p>
+    <a class="btn" href="${intentUrl}">Open in SplitEase</a>
+    <a class="btn btn-secondary" href="${playUrl}">Get it on Google Play</a>
+  </p>
+  <p class="muted"><a href="${customUrl}">Or try the app link</a></p>
+</body>
+</html>`);
+});
+
 app.post("/send-mail", async (req, res) => {
   try {
     if (!isAuthorized(req)) {

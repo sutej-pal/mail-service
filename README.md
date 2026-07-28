@@ -41,6 +41,27 @@ Minimum for Free tier:
 
 ## 3) API
 
+### `GET /invite/:token`
+
+Public browser bridge for invite links:
+
+1. Tries to open the installed SplitEase app (`intent://` / `splitease://`).
+2. If the app is not installed (page still visible), falls back to Google Play with an Install Referrer:
+
+```
+https://play.google.com/store/apps/details?id=com.splitease.app&referrer=invite_token%3D<token>
+```
+
+After install, the Android app reads that referrer once and continues the normal pending-invite / OTP / accept flow.
+
+Example:
+
+```
+https://<your-render-service>.onrender.com/invite/<token>
+```
+
+**Note:** Full Install Referrer E2E requires a Play install (Internal testing is enough). Sideload / Android Studio Run will not populate the referrer.
+
 ### `POST /send-mail`
 
 Headers:
