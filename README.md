@@ -45,14 +45,10 @@ Minimum for Free tier:
 
 Public browser bridge for invite links:
 
-1. Tries to open the installed SplitEase app (`intent://` / `splitease://`).
-2. If the app is not installed (page still visible), falls back to Google Play with an Install Referrer:
-
-```
-https://play.google.com/store/apps/details?id=com.splitease.app&referrer=invite_token%3D<token>
-```
-
-After install, the Android app reads that referrer once and continues the normal pending-invite / OTP / accept flow.
+1. Tries to open the installed SplitEase app (`splitease://` then `intent://`).
+2. Stays on the page if the hand-off fails — **does not** auto-open Play Store
+   (Play is a manual button; auto-redirect shows unrelated apps until publish).
+3. Serves Digital Asset Links at `GET /.well-known/assetlinks.json` for App Links.
 
 Example:
 

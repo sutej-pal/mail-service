@@ -176,9 +176,9 @@ app.get("/health", (_req, res) => {
 
 /**
  * Browser invite bridge:
- * 1) Try open the installed app (intent:// / splitease://).
- * 2) If still on the page, fall back to Play Store with invite_token referrer
- *    so first launch can recover the token via Play Install Referrer API.
+ * 1) Try open the installed app (splitease:// then intent://).
+ * 2) Stay on this page if the hand-off fails — Play Store is manual only.
+ *    (Auto-Play redirects to unrelated listings until the app is published.)
  */
 app.get("/invite/:token", (req, res) => {
   const token = String(req.params.token || "").trim();
@@ -188,9 +188,11 @@ app.get("/invite/:token", (req, res) => {
     );
   }
 
-  const intentUrl =
-    `intent://invite/${token}#Intent;scheme=splitease;package=com.splitease.app;end`;
+  const stayHere = `https://${req.get("host")}/invite/${token}`;
   const customUrl = `splitease://invite/${token}`;
+  const intentUrl =
+    `intent://invite/${token}#Intent;scheme=splitease;package=com.splitease.app;` +
+    `S.browser_fallback_url=${encodeURIComponent(stayHere)};end`;
   const playUrl =
     "https://play.google.com/store/apps/details?id=com.splitease.app&referrer=" +
     encodeURIComponent(`invite_token=${token}`);
@@ -216,28 +218,25 @@ app.get("/invite/:token", (req, res) => {
     (function () {
       var intentUrl = ${JSON.stringify(intentUrl)};
       var customUrl = ${JSON.stringify(customUrl)};
-      var playUrl = ${JSON.stringify(playUrl)};
       var leftForApp = false;
       document.addEventListener("visibilitychange", function () {
         if (document.visibilityState === "hidden") leftForApp = true;
       });
       window.addEventListener("pagehide", function () { leftForApp = true; });
-      try { window.location.replace(intentUrl); } catch (e) {}
+      // Prefer custom scheme (works for sideloaded / emulator installs).
+      try { window.location.href = customUrl; } catch (e) {}
       setTimeout(function () {
         if (leftForApp) return;
-        try { window.location.href = customUrl; } catch (e2) {}
-      }, 400);
-      setTimeout(function () {
-        if (leftForApp) return;
-        try { window.location.href = playUrl; } catch (e3) {}
-      }, 1600);
+        try { window.location.href = intentUrl; } catch (e2) {}
+      }, 500);
+      // No automatic Play Store redirect — user taps Play only if needed.
     })();
   </script>
 </head>
 <body>
   <h1>SplitEase</h1>
   <p>Opening the invite in the SplitEase app…</p>
-  <p class="muted">Don’t have the app? We’ll send you to Google Play — after install, the invite opens automatically.</p>
+  <p class="muted">If nothing happens, tap <strong>Open in SplitEase</strong>. Use Play only if the app is not installed yet.</p>
   <p>
     <a class="btn" href="${intentUrl}">Open in SplitEase</a>
     <a class="btn btn-secondary" href="${playUrl}">Get it on Google Play</a>
@@ -245,6 +244,27 @@ app.get("/invite/:token", (req, res) => {
   <p class="muted"><a href="${customUrl}">Or try the app link</a></p>
 </body>
 </html>`);
+});
+
+/** Digital Asset Links for https App Links verification on this host. */
+app.get("/.well-known/assetlinks.json", (_req, res) => {
+  res
+    .status(200)
+    .type("application/json")
+    .send(`[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.splitease.app",
+      "sha256_cert_fingerprints": [
+        "8D:11:61:EF:64:F2:55:7A:00:6A:52:E2:19:12:1B:3B:C7:12:2E:82:97:3A:54:DF:FC:20:EE:93:C2:99:B4:EB",
+        "32:73:A2:10:74:E1:E9:47:DE:8D:AD:DD:AB:CA:8C:63:80:1C:82:E6:A3:01:88:A8:75:E2:0B:AC:0B:63:72:DD"
+      ]
+    }
+  }
+]
+`);
 });
 
 app.post("/send-mail", async (req, res) => {
