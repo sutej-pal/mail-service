@@ -86,6 +86,24 @@ Rules:
 - Required: `to`, `subject`, and at least one of `text` or `html`.
 - Response success: `{ "ok": true, "messageId": "..." }`.
 
+### `POST /supabase/send-email-hook`
+
+Supabase Auth Hook endpoint (Send Email hook) so signup OTP emails are sent by this service instead of Supabase default templates.
+
+- Expected payload: Supabase Send Email Hook JSON (`user`, `email_data`).
+- Signature verification:
+  - If `SEND_EMAIL_HOOK_SECRET` is set, this endpoint verifies `webhook-id`, `webhook-timestamp`, `webhook-signature`.
+  - If not set, it accepts requests (dev fallback).
+
+Recommended Supabase config:
+
+- Auth → Hooks → Send Email:
+  - URL: `https://<your-render-service>.onrender.com/supabase/send-email-hook`
+  - Secret: generated in the hook UI (also set as `SEND_EMAIL_HOOK_SECRET` on Render)
+- Auth → Providers → Email:
+  - Confirm email ON
+  - OTP length = `6`
+
 ## 4) Example client call
 
 ```bash

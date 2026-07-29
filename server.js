@@ -8,11 +8,19 @@ const port = Number(process.env.PORT || 3000);
 
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
 app.use(cors({ origin: allowedOrigin === "*" ? true : allowedOrigin }));
-app.use(express.json({ limit: "1mb" }));
+// Keep raw body for the Supabase webhook so signature verification can use the exact payload.
+app.use((req, res, next) => {
+  if (req.path === "/supabase/send-email-hook") {
+    return express.text({ type: "*/*", limit: "1mb" })(req, res, next);
+  }
+  return express.json({ limit: "1mb" })(req, res, next);
+});
 
 const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
 const mailFrom = (process.env.MAIL_FROM || "").trim();
 const useResend = Boolean(resendApiKey);
+const sendEmailHookSecretRaw = (process.env.SEND_EMAIL_HOOK_SECRET || "").trim();
+const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
 
 if (!mailFrom) {
   throw new Error("Missing env var: MAIL_FROM");
@@ -91,6 +99,71 @@ async function sendViaSmtp({ from, to, subject, text, html }) {
     html,
   });
   return { messageId: info.messageId };
+}
+
+function looksLikeOtpToken(token) {
+  return typeof token === "string" && /^\d{4,10}$/.test(token.trim());
+}
+
+function buildSupabaseAuthEmail({ emailActionType, token }) {
+  const action = String(emailActionType || "").trim().toLowerCase();
+  const otp = String(token || "").trim();
+  const isOtp = looksLikeOtpToken(otp);
+
+  if (action === "signup" && isOtp) {
+    return {
+      subject: "Confirm your SplitEase account",
+      text:
+        `Enter this ${otp.length}-digit verification code in the SplitEase app ` +
+        `to activate your account: ${otp}\n\n` +
+        "This code expires soon. If you did not create a SplitEase account, you can ignore this email.",
+      html:
+        "<h2>Confirm your SplitEase account</h2>" +
+        `<p>Enter this <strong>${otp.length}-digit</strong> verification code in the SplitEase app to activate your account:</p>` +
+        `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
+        "<p>This code expires soon. If you did not create a SplitEase account, you can ignore this email.</p>",
+    };
+  }
+
+  const label = action || "auth";
+  return {
+    subject: "SplitEase authentication",
+    text:
+      `A SplitEase authentication event was requested (${label}).` +
+      (otp ? `\nCode: ${otp}` : "") +
+      "\n\nIf this wasn't you, you can ignore this email.",
+    html:
+      `<h2>SplitEase authentication</h2><p>A SplitEase authentication event was requested (<strong>${label}</strong>).</p>` +
+      (otp ? `<p>Code: <strong>${otp}</strong></p>` : "") +
+      "<p>If this wasn't you, you can ignore this email.</p>",
+  };
+}
+
+function verifySupabaseWebhook(req, rawBody) {
+  if (!sendEmailHookSecret) {
+    // Allow until SEND_EMAIL_HOOK_SECRET is set on Render.
+    return true;
+  }
+  const id = req.header("webhook-id");
+  const ts = req.header("webhook-timestamp");
+  const sig = req.header("webhook-signature");
+  if (!id || !ts || !sig) return false;
+  const signedContent = `${id}.${ts}.${rawBody}`;
+  const expected = require("crypto")
+    .createHmac("sha256", Buffer.from(sendEmailHookSecret, "base64"))
+    .update(signedContent)
+    .digest("base64");
+  return String(sig)
+    .split(" ")
+    .some((part) => {
+      const token = String(part).trim();
+      if (!token.startsWith("v1,")) return false;
+      const actual = token.slice(3);
+      const a = Buffer.from(actual);
+      const b = Buffer.from(expected);
+      if (a.length !== b.length) return false;
+      return require("crypto").timingSafeEqual(a, b);
+    });
 }
 
 app.get("/health", (_req, res) => {
@@ -206,6 +279,57 @@ app.post("/send-mail", async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+app.post("/supabase/send-email-hook", async (req, res) => {
+  try {
+    const payload = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
+    if (!verifySupabaseWebhook(req, payload)) {
+      return res.status(401).json({
+        error: {
+          http_code: 401,
+          message: "Invalid webhook signature",
+        },
+      });
+    }
+
+    const data = typeof req.body === "string" ? JSON.parse(payload || "{}") : req.body || {};
+    const user = data.user || {};
+    const emailData = data.email_data || {};
+    const to = String(user.email || "").trim();
+    if (!to) {
+      return res.status(400).json({
+        error: {
+          http_code: 400,
+          message: "Missing user.email",
+        },
+      });
+    }
+
+    const mail = buildSupabaseAuthEmail({
+      emailActionType: emailData.email_action_type,
+      token: emailData.token,
+    });
+
+    const from = `"SplitEase - Onboarding" <${mailFrom}>`;
+    console.log(
+      `supabase-send-email-hook via ${useResend ? "resend" : "smtp"} to=${to} action=${emailData.email_action_type}`,
+    );
+    const result = useResend
+      ? await sendViaResend({ from, to, subject: mail.subject, text: mail.text, html: mail.html })
+      : await sendViaSmtp({ from, to, subject: mail.subject, text: mail.text, html: mail.html });
+
+    // Supabase expects an empty JSON object on success.
+    return res.status(200).json({});
+  } catch (error) {
+    console.error("supabase send-email-hook failed:", error);
+    return res.status(500).json({
+      error: {
+        http_code: 500,
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
     });
   }
 });
