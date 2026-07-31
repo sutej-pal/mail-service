@@ -169,7 +169,7 @@ function verifySupabaseWebhook(req, rawBody) {
 app.get("/health", (_req, res) => {
   res.status(200).json({
     ok: true,
-    service: "smtp-mail-service",
+    service: "splitease-server",
     transport: useResend ? "resend-https" : "smtp",
   });
 });
@@ -356,6 +356,6 @@ app.post("/supabase/send-email-hook", async (req, res) => {
 
 app.listen(port, () => {
   console.log(
-    `Mail service running on port ${port} (transport=${useResend ? "resend-https" : "smtp"})`,
+    `SplitEase Server running on port ${port} (transport=${useResend ? "resend-https" : "smtp"})`,
   );
 });

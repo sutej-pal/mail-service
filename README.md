@@ -1,117 +1,61 @@
-# Mail Service (Render)
+# SplitEase Server
 
-Small reusable Node.js mail API you can deploy on Render and call from any app/backend.
+Backend for SplitEase: transactional email (OTP / onboarding), Supabase Send Email hook, and https invite deep-link bridge.
 
-**Render Free note:** outbound SMTP ports `25` / `465` / `587` are blocked. Use `RESEND_API_KEY` (HTTPS) on Free, or upgrade the instance to use SMTP.
+**Layout:**
 
-## 1) Setup locally
+```
+C:\splitease\
+  app\       Android app
+  server\    this repo
+```
+
+Known-good baseline: commit [`b04a42d`](https://github.com/sutej-pal/mail-service/commit/b04a42dc694aaf01ba7fd9790c25ee4f02e5313e).
+
+## Local setup (Nodemailer / SMTP)
 
 1. Copy `.env.example` to `.env`.
-2. Prefer `RESEND_API_KEY` + `MAIL_FROM` (HTTPS). SMTP vars work on hosts that allow outbound SMTP.
-3. Install and run:
+2. Set Gmail SMTP vars. Leave `RESEND_API_KEY` unset unless you have a verified Resend domain.
+3. Run:
 
 ```bash
+cd C:\splitease\server
 npm install
 npm start
 ```
 
-Health check:
+Health: `GET http://localhost:3001/health` → `{ "service": "splitease-server", ... }`
+
+## Why this exists
+
+Supabase Free Auth email is rate-limited during development. SplitEase Server sends OTP and other mail via your SMTP so signup is not blocked.
+
+## Render
+
+Render **Free** blocks outbound SMTP (`25` / `465` / `587`). For Free tier either:
+
+- run this server locally (or via ngrok) and point the Supabase hook there, **or**
+- use `RESEND_API_KEY` + a **verified** domain (not `@resend.dev`), **or**
+- upgrade the host so SMTP works.
+
+### Deploy
+
+- Runtime: Node
+- Build: `npm install`
+- Start: `npm start`
+- Env: see `.env.example` (`MAIL_API_KEY`, `MAIL_FROM`, SMTP_* or Resend)
+
+## API
+
+- `GET /health`
+- `GET /invite/:token` — open app / Play bridge + `/.well-known/assetlinks.json`
+- `POST /send-mail` — app transactional mail (`x-api-key` if `MAIL_API_KEY` set)
+- `POST /supabase/send-email-hook` — Supabase Auth Send Email hook
+
+## GitHub rename (optional)
+
+If the GitHub repo is still `sutej-pal/mail-service`, rename it to `splitease-server` and:
 
 ```bash
-GET http://localhost:3000/health
+git remote set-url origin https://github.com/sutej-pal/splitease-server.git
 ```
-
-## 2) Render deployment
-
-Create a new **Web Service** from `mail-service` and set:
-
-- Runtime: `Node`
-- Build Command: `npm install`
-- Start Command: `npm start`
-
-Add environment variables from `.env.example` in Render dashboard.
-
-Minimum for Free tier:
-
-| Key | Value |
-|---|---|
-| `MAIL_API_KEY` | Shared secret (Android `MAIL_SERVICE_API_KEY`) |
-| `MAIL_FROM` | `onboarding@resend.dev` (test) or your verified domain sender |
-| `RESEND_API_KEY` | From [resend.com](https://resend.com) |
-
-## 3) API
-
-### `GET /invite/:token`
-
-Public browser bridge for invite links:
-
-1. Tries to open the installed SplitEase app (`splitease://` then `intent://`).
-2. Stays on the page if the hand-off fails — **does not** auto-open Play Store
-   (Play is a manual button; auto-redirect shows unrelated apps until publish).
-3. Serves Digital Asset Links at `GET /.well-known/assetlinks.json` for App Links.
-
-Example:
-
-```
-https://<your-render-service>.onrender.com/invite/<token>
-```
-
-**Note:** Full Install Referrer E2E requires a Play install (Internal testing is enough). Sideload / Android Studio Run will not populate the referrer.
-
-### `POST /send-mail`
-
-Headers:
-
-- `Content-Type: application/json`
-- `x-api-key: <MAIL_API_KEY>` (required only if `MAIL_API_KEY` is set)
-
-Body:
-
-```json
-{
-  "to": "user@example.com",
-  "subject": "Project Invite",
-  "text": "You were invited to our app",
-  "html": "<b>You were invited to our app</b>",
-  "fromName": "Your App Name"
-}
-```
-
-Rules:
-
-- Required: `to`, `subject`, and at least one of `text` or `html`.
-- Response success: `{ "ok": true, "messageId": "..." }`.
-
-### `POST /supabase/send-email-hook`
-
-Supabase Auth Hook endpoint (Send Email hook) so signup OTP emails are sent by this service instead of Supabase default templates.
-
-- Expected payload: Supabase Send Email Hook JSON (`user`, `email_data`).
-- Signature verification:
-  - If `SEND_EMAIL_HOOK_SECRET` is set, this endpoint verifies `webhook-id`, `webhook-timestamp`, `webhook-signature`.
-  - If not set, it accepts requests (dev fallback).
-
-Recommended Supabase config:
-
-- Auth → Hooks → Send Email:
-  - URL: `https://<your-render-service>.onrender.com/supabase/send-email-hook`
-  - Secret: generated in the hook UI (also set as `SEND_EMAIL_HOOK_SECRET` on Render)
-- Auth → Providers → Email:
-  - Confirm email ON
-  - OTP length = `6`
-
-## 4) Example client call
-
-```bash
-curl -X POST https://<your-render-service>.onrender.com/send-mail \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: <MAIL_API_KEY>" \
-  -d "{\"to\":\"user@example.com\",\"subject\":\"Hello\",\"text\":\"Test mail\"}"
-```
-
-## 5) Recommended provider notes
-
-- On Render Free, set `RESEND_API_KEY` — do not rely on Gmail SMTP (`smtp.gmail.com:465`).
-- Use a verified domain and sender address to improve deliverability.
-- Keep `MAIL_API_KEY` set in production.
-- Do not expose SMTP / Resend credentials in mobile apps; call this service with the shared API key only.
