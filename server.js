@@ -16,9 +16,7 @@ app.use((req, res, next) => {
   return express.json({ limit: "1mb" })(req, res, next);
 });
 
-const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
 const mailFrom = (process.env.MAIL_FROM || "").trim();
-const useResend = Boolean(resendApiKey);
 const sendEmailHookSecretRaw = (process.env.SEND_EMAIL_HOOK_SECRET || "").trim();
 const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
 
@@ -26,31 +24,25 @@ if (!mailFrom) {
   throw new Error("Missing env var: MAIL_FROM");
 }
 
-let transporter = null;
-if (!useResend) {
-  const requiredEnvVars = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"];
-  const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
-  if (missingEnvVars.length > 0) {
-    throw new Error(
-      `Missing env vars: ${missingEnvVars.join(", ")} ` +
-        `(or set RESEND_API_KEY to send over HTTPS — required on Render Free, which blocks SMTP ports)`,
-    );
-  }
-
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    // Fail fast when SMTP is blocked (e.g. Render Free outbound 25/465/587).
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 20_000,
-  });
+const requiredEnvVars = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"];
+const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
+if (missingEnvVars.length > 0) {
+  throw new Error(`Missing env vars: ${missingEnvVars.join(", ")}`);
 }
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+  // Fail fast when SMTP is blocked (e.g. Render Free outbound 25/465/587).
+  connectionTimeout: 15_000,
+  greetingTimeout: 15_000,
+  socketTimeout: 20_000,
+});
 
 function isAuthorized(req) {
   const expectedApiKey = process.env.MAIL_API_KEY;
@@ -62,35 +54,13 @@ function isAuthorized(req) {
   return providedApiKey === expectedApiKey;
 }
 
-async function sendViaResend({ from, to, subject, text, html }) {
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject,
-      text: text || undefined,
-      html: html || undefined,
-    }),
-  });
-
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail =
-      typeof body === "object" && body && (body.message || body.error)
-        ? String(body.message || body.error)
-        : `HTTP ${response.status}`;
-    throw new Error(`Resend send failed: ${detail}`);
-  }
-
-  return { messageId: body.id || "resend" };
-}
-
-async function sendViaSmtp({ from, to, subject, text, html }) {
+/**
+ * Shared delivery used by POST /send-mail and the Supabase auth hook.
+ * This is the single path for OTP + transactional mail.
+ */
+async function deliverMail({ to, subject, text, html, fromName }) {
+  const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
+  console.log(`deliverMail via smtp to=${to} subject=${subject}`);
   const info = await transporter.sendMail({
     from,
     to,
@@ -99,20 +69,6 @@ async function sendViaSmtp({ from, to, subject, text, html }) {
     html,
   });
   return { messageId: info.messageId };
-}
-
-/**
- * Shared delivery used by POST /send-mail and the Supabase auth hook.
- * This is the single path for OTP + transactional mail.
- */
-async function deliverMail({ to, subject, text, html, fromName }) {
-  const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
-  console.log(
-    `deliverMail via ${useResend ? "resend" : "smtp"} to=${to} subject=${subject}`,
-  );
-  return useResend
-    ? await sendViaResend({ from, to, subject, text, html })
-    : await sendViaSmtp({ from, to, subject, text, html });
 }
 
 function looksLikeOtpToken(token) {
@@ -227,7 +183,7 @@ app.get("/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "splitease-server",
-    transport: useResend ? "resend-https" : "smtp",
+    transport: "smtp",
   });
 });
 
@@ -448,7 +404,5 @@ app.post("/supabase/send-email-hook", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(
-    `SplitEase Server running on port ${port} (transport=${useResend ? "resend-https" : "smtp"})`,
-  );
+  console.log(`SplitEase Server running on port ${port} (transport=smtp)`);
 });

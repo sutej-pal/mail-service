@@ -15,7 +15,7 @@ Known-good baseline: commit [`b04a42d`](https://github.com/sutej-pal/mail-servic
 ## Local setup (Nodemailer / SMTP)
 
 1. Copy `.env.example` to `.env`.
-2. Set Gmail SMTP vars. Leave `RESEND_API_KEY` unset unless you have a verified Resend domain.
+2. Set Gmail (or other) SMTP vars and `MAIL_FROM`.
 3. Run:
 
 ```bash
@@ -35,7 +35,6 @@ Supabase Free Auth email is rate-limited during development. SplitEase Server se
 Render **Free** blocks outbound SMTP (`25` / `465` / `587`). For Free tier either:
 
 - run this server locally (or via ngrok) and point the Supabase hook there, **or**
-- use `RESEND_API_KEY` + a **verified** domain (not `@resend.dev`), **or**
 - upgrade the host so SMTP works.
 
 ### Deploy
@@ -43,7 +42,7 @@ Render **Free** blocks outbound SMTP (`25` / `465` / `587`). For Free tier eithe
 - Runtime: Node
 - Build: `npm install`
 - Start: `npm start`
-- Env: see `.env.example` (`MAIL_API_KEY`, `MAIL_FROM`, SMTP_* or Resend)
+- Env: see `.env.example` (`MAIL_API_KEY`, `MAIL_FROM`, SMTP_*)
 
 ## API
 
