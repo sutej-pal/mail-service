@@ -1,75 +1,18 @@
 const express = require("express");
 const cors = require("cors");
-const nodemailer = require("nodemailer");
+const crypto = require("node:crypto");
 require("dotenv").config();
 
+const { sendMail } = require("./mailService");
+
 const app = express();
-const port = Number(process.env.PORT || 3000);
+app.disable("x-powered-by");
 
-const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
-app.use(cors({ origin: allowedOrigin === "*" ? true : allowedOrigin }));
-// Keep raw body for the Supabase webhook so signature verification can use the exact payload.
-app.use((req, res, next) => {
-  if (req.path === "/supabase/send-email-hook") {
-    return express.text({ type: "*/*", limit: "1mb" })(req, res, next);
-  }
-  return express.json({ limit: "1mb" })(req, res, next);
-});
+app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true }));
+app.use(express.json({ limit: "1mb" }));
 
-const mailFrom = (process.env.MAIL_FROM || "").trim();
 const sendEmailHookSecretRaw = (process.env.SEND_EMAIL_HOOK_SECRET || "").trim();
 const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
-
-if (!mailFrom) {
-  throw new Error("Missing env var: MAIL_FROM");
-}
-
-const requiredEnvVars = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"];
-const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
-if (missingEnvVars.length > 0) {
-  throw new Error(`Missing env vars: ${missingEnvVars.join(", ")}`);
-}
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  // Fail fast when SMTP is blocked (e.g. Render Free outbound 25/465/587).
-  connectionTimeout: 15_000,
-  greetingTimeout: 15_000,
-  socketTimeout: 20_000,
-});
-
-function isAuthorized(req) {
-  const expectedApiKey = process.env.MAIL_API_KEY;
-  if (!expectedApiKey) {
-    return true;
-  }
-
-  const providedApiKey = req.header("x-api-key");
-  return providedApiKey === expectedApiKey;
-}
-
-/**
- * Shared delivery used by POST /send-mail and the Supabase auth hook.
- * This is the single path for OTP + transactional mail.
- */
-async function deliverMail({ to, subject, text, html, fromName }) {
-  const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
-  console.log(`deliverMail via smtp to=${to} subject=${subject}`);
-  const info = await transporter.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-  });
-  return { messageId: info.messageId };
-}
 
 function looksLikeOtpToken(token) {
   return typeof token === "string" && /^\d{4,10}$/.test(token.trim());
@@ -86,7 +29,8 @@ function buildOtpMail({ purpose, token }) {
   const isOtp = looksLikeOtpToken(otp);
   const digits = isOtp ? otp.length : 6;
 
-  const isSignup = action === "signup" || action === "confirm" || action === "confirmation";
+  const isSignup =
+    action === "signup" || action === "confirm" || action === "confirmation";
   const isLogin =
     action === "login" ||
     action === "magiclink" ||
@@ -154,7 +98,7 @@ function buildOtpMail({ purpose, token }) {
 
 function verifySupabaseWebhook(req, rawBody) {
   if (!sendEmailHookSecret) {
-    // Allow until SEND_EMAIL_HOOK_SECRET is set on Render.
+    // Allow until SEND_EMAIL_HOOK_SECRET is set on Vercel.
     return true;
   }
   const id = req.header("webhook-id");
@@ -162,7 +106,7 @@ function verifySupabaseWebhook(req, rawBody) {
   const sig = req.header("webhook-signature");
   if (!id || !ts || !sig) return false;
   const signedContent = `${id}.${ts}.${rawBody}`;
-  const expected = require("crypto")
+  const expected = crypto
     .createHmac("sha256", Buffer.from(sendEmailHookSecret, "base64"))
     .update(signedContent)
     .digest("base64");
@@ -175,16 +119,12 @@ function verifySupabaseWebhook(req, rawBody) {
       const a = Buffer.from(actual);
       const b = Buffer.from(expected);
       if (a.length !== b.length) return false;
-      return require("crypto").timingSafeEqual(a, b);
+      return crypto.timingSafeEqual(a, b);
     });
 }
 
 app.get("/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "splitease-server",
-    transport: "smtp",
-  });
+  res.status(200).json({ ok: true, service: "splitease-server" });
 });
 
 /**
@@ -280,22 +220,13 @@ app.get("/.well-known/assetlinks.json", (_req, res) => {
 `);
 });
 
+// TODO: re-enable MAIL_API_KEY / x-api-key auth once mail flow is stable (see TODO.md).
 /**
- * Primary mail API used by the Android app and by the Supabase OTP hook.
- *
- * Body (transactional):
- *   { to, subject, text?, html?, fromName? }
- *
- * Body (OTP convenience — preferred for verification codes):
- *   { to, otp, purpose?: "signup"|"login", fromName? }
- *   subject/text/html are built server-side when otp is present.
+ * Body (transactional): { to, subject, text?, html?, fromName? }
+ * Body (OTP):           { to, otp, purpose?: "signup"|"login", fromName? }
  */
 app.post("/send-mail", async (req, res) => {
   try {
-    if (!isAuthorized(req)) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
     const body = req.body || {};
     const to = String(body.to || "").trim();
     const otp = body.otp != null ? String(body.otp).trim() : "";
@@ -324,18 +255,8 @@ app.post("/send-mail", async (req, res) => {
       });
     }
 
-    const result = await deliverMail({
-      to,
-      subject,
-      text,
-      html,
-      fromName,
-    });
-
-    return res.status(200).json({
-      ok: true,
-      messageId: result.messageId,
-    });
+    const result = await sendMail({ to, subject, text, html, fromName });
+    return res.status(200).json({ ok: true, messageId: result.messageId });
   } catch (error) {
     console.error("send-mail failed:", error);
     return res.status(500).json({
@@ -347,11 +268,12 @@ app.post("/send-mail", async (req, res) => {
 
 /**
  * Supabase Auth "Send Email" hook.
- * Builds OTP content then delivers through the same /send-mail pipeline (deliverMail).
+ * Builds OTP content then delivers through mailService.
  */
 app.post("/supabase/send-email-hook", async (req, res) => {
   try {
-    const payload = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
+    const payload =
+      typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
     if (!verifySupabaseWebhook(req, payload)) {
       return res.status(401).json({
         error: {
@@ -361,7 +283,8 @@ app.post("/supabase/send-email-hook", async (req, res) => {
       });
     }
 
-    const data = typeof req.body === "string" ? JSON.parse(payload || "{}") : req.body || {};
+    const data =
+      typeof req.body === "string" ? JSON.parse(payload || "{}") : req.body || {};
     const user = data.user || {};
     const emailData = data.email_data || {};
     const to = String(user.email || "").trim();
@@ -379,10 +302,10 @@ app.post("/supabase/send-email-hook", async (req, res) => {
     const mail = buildOtpMail({ purpose, token });
 
     console.log(
-      `supabase-send-email-hook → send-mail pipeline to=${to} action=${purpose}`,
+      `supabase-send-email-hook → send-mail to=${to} action=${purpose}`,
     );
 
-    await deliverMail({
+    await sendMail({
       to,
       subject: mail.subject,
       text: mail.text,
@@ -403,6 +326,12 @@ app.post("/supabase/send-email-hook", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`SplitEase Server running on port ${port} (transport=smtp)`);
-});
+// Local/dev only — Vercel uses the exported app as a serverless function.
+if (require.main === module) {
+  const port = Number(process.env.PORT || 3000);
+  app.listen(port, () => {
+    console.log(`SplitEase Server running on port ${port}`);
+  });
+}
+
+module.exports = app;

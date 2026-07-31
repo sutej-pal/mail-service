@@ -30,13 +30,6 @@ Health: `GET http://localhost:3001/health` → `{ "service": "splitease-server",
 
 Supabase Free Auth email is rate-limited during development. SplitEase Server sends OTP and other mail via your SMTP so signup is not blocked.
 
-## Render
-
-Render **Free** blocks outbound SMTP (`25` / `465` / `587`). For Free tier either:
-
-- run this server locally (or via ngrok) and point the Supabase hook there, **or**
-- upgrade the host so SMTP works.
-
 ### Deploy
 
 - Runtime: Node
