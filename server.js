@@ -101,40 +101,97 @@ async function sendViaSmtp({ from, to, subject, text, html }) {
   return { messageId: info.messageId };
 }
 
+/**
+ * Shared delivery used by POST /send-mail and the Supabase auth hook.
+ * This is the single path for OTP + transactional mail.
+ */
+async function deliverMail({ to, subject, text, html, fromName }) {
+  const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
+  console.log(
+    `deliverMail via ${useResend ? "resend" : "smtp"} to=${to} subject=${subject}`,
+  );
+  return useResend
+    ? await sendViaResend({ from, to, subject, text, html })
+    : await sendViaSmtp({ from, to, subject, text, html });
+}
+
 function looksLikeOtpToken(token) {
   return typeof token === "string" && /^\d{4,10}$/.test(token.trim());
 }
 
-function buildSupabaseAuthEmail({ emailActionType, token }) {
-  const action = String(emailActionType || "").trim().toLowerCase();
+/**
+ * Builds OTP / auth email content for /send-mail and the Supabase hook.
+ * @param {string} purpose signup | login | magiclink | email | recovery | invite | auth
+ * @param {string} token OTP digits from Supabase
+ */
+function buildOtpMail({ purpose, token }) {
+  const action = String(purpose || "auth").trim().toLowerCase();
   const otp = String(token || "").trim();
   const isOtp = looksLikeOtpToken(otp);
+  const digits = isOtp ? otp.length : 6;
 
-  if (action === "signup" && isOtp) {
+  const isSignup = action === "signup" || action === "confirm" || action === "confirmation";
+  const isLogin =
+    action === "login" ||
+    action === "magiclink" ||
+    action === "email" ||
+    action === "otp";
+
+  if (isSignup && isOtp) {
     return {
       subject: "Confirm your SplitEase account",
+      fromName: "SplitEase",
       text:
-        `Enter this ${otp.length}-digit verification code in the SplitEase app ` +
+        `Enter this ${digits}-digit verification code in the SplitEase app ` +
         `to activate your account: ${otp}\n\n` +
         "This code expires soon. If you did not create a SplitEase account, you can ignore this email.",
       html:
         "<h2>Confirm your SplitEase account</h2>" +
-        `<p>Enter this <strong>${otp.length}-digit</strong> verification code in the SplitEase app to activate your account:</p>` +
+        `<p>Enter this <strong>${digits}-digit</strong> verification code in the SplitEase app to activate your account:</p>` +
         `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
         "<p>This code expires soon. If you did not create a SplitEase account, you can ignore this email.</p>",
+    };
+  }
+
+  if (isLogin && isOtp) {
+    return {
+      subject: "Your SplitEase sign-in code",
+      fromName: "SplitEase",
+      text:
+        `Enter this ${digits}-digit verification code in the SplitEase app to finish signing in: ${otp}\n\n` +
+        "This code expires soon. If you did not try to sign in, you can ignore this email.",
+      html:
+        "<h2>Sign in to SplitEase</h2>" +
+        `<p>Enter this <strong>${digits}-digit</strong> verification code in the SplitEase app to finish signing in:</p>` +
+        `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
+        "<p>This code expires soon. If you did not try to sign in, you can ignore this email.</p>",
+    };
+  }
+
+  if (isOtp) {
+    return {
+      subject: "Your SplitEase verification code",
+      fromName: "SplitEase",
+      text:
+        `Your SplitEase verification code is: ${otp}\n\n` +
+        "Enter it in the app. If you did not request this, you can ignore this email.",
+      html:
+        "<h2>SplitEase verification</h2>" +
+        `<p>Your verification code:</p>` +
+        `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
+        "<p>Enter it in the app. If you did not request this, you can ignore this email.</p>",
     };
   }
 
   const label = action || "auth";
   return {
     subject: "SplitEase authentication",
+    fromName: "SplitEase",
     text:
       `A SplitEase authentication event was requested (${label}).` +
-      (otp ? `\nCode: ${otp}` : "") +
       "\n\nIf this wasn't you, you can ignore this email.",
     html:
       `<h2>SplitEase authentication</h2><p>A SplitEase authentication event was requested (<strong>${label}</strong>).</p>` +
-      (otp ? `<p>Code: <strong>${otp}</strong></p>` : "") +
       "<p>If this wasn't you, you can ignore this email.</p>",
   };
 }
@@ -267,28 +324,57 @@ app.get("/.well-known/assetlinks.json", (_req, res) => {
 `);
 });
 
+/**
+ * Primary mail API used by the Android app and by the Supabase OTP hook.
+ *
+ * Body (transactional):
+ *   { to, subject, text?, html?, fromName? }
+ *
+ * Body (OTP convenience — preferred for verification codes):
+ *   { to, otp, purpose?: "signup"|"login", fromName? }
+ *   subject/text/html are built server-side when otp is present.
+ */
 app.post("/send-mail", async (req, res) => {
   try {
     if (!isAuthorized(req)) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const { to, subject, text, html, fromName } = req.body || {};
+    const body = req.body || {};
+    const to = String(body.to || "").trim();
+    const otp = body.otp != null ? String(body.otp).trim() : "";
+    let subject = body.subject;
+    let text = body.text;
+    let html = body.html;
+    let fromName = body.fromName;
+
+    if (otp && looksLikeOtpToken(otp)) {
+      const built = buildOtpMail({
+        purpose: body.purpose || body.email_action_type || "login",
+        token: otp,
+      });
+      subject = subject || built.subject;
+      text = text || built.text;
+      html = html || built.html;
+      fromName = fromName || built.fromName;
+    }
+
     if (!to || !subject || (!text && !html)) {
       return res.status(400).json({
         ok: false,
-        error: "to, subject and at least one of text/html are required",
+        error:
+          "to, subject and at least one of text/html are required " +
+          "(or pass to + otp to send a verification code)",
       });
     }
 
-    const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
-    console.log(
-      `send-mail via ${useResend ? "resend" : "smtp"} to=${to} subject=${subject}`,
-    );
-
-    const result = useResend
-      ? await sendViaResend({ from, to, subject, text, html })
-      : await sendViaSmtp({ from, to, subject, text, html });
+    const result = await deliverMail({
+      to,
+      subject,
+      text,
+      html,
+      fromName,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -303,6 +389,10 @@ app.post("/send-mail", async (req, res) => {
   }
 });
 
+/**
+ * Supabase Auth "Send Email" hook.
+ * Builds OTP content then delivers through the same /send-mail pipeline (deliverMail).
+ */
 app.post("/supabase/send-email-hook", async (req, res) => {
   try {
     const payload = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
@@ -328,18 +418,21 @@ app.post("/supabase/send-email-hook", async (req, res) => {
       });
     }
 
-    const mail = buildSupabaseAuthEmail({
-      emailActionType: emailData.email_action_type,
-      token: emailData.token,
-    });
+    const purpose = String(emailData.email_action_type || "auth").trim();
+    const token = String(emailData.token || "").trim();
+    const mail = buildOtpMail({ purpose, token });
 
-    const from = `"SplitEase - Onboarding" <${mailFrom}>`;
     console.log(
-      `supabase-send-email-hook via ${useResend ? "resend" : "smtp"} to=${to} action=${emailData.email_action_type}`,
+      `supabase-send-email-hook → send-mail pipeline to=${to} action=${purpose}`,
     );
-    const result = useResend
-      ? await sendViaResend({ from, to, subject: mail.subject, text: mail.text, html: mail.html })
-      : await sendViaSmtp({ from, to, subject: mail.subject, text: mail.text, html: mail.html });
+
+    await deliverMail({
+      to,
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+      fromName: mail.fromName,
+    });
 
     // Supabase expects an empty JSON object on success.
     return res.status(200).json({});
