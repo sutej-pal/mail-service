@@ -43,11 +43,11 @@ function buildOtpMail({ purpose, token }) {
       subject: "Reset your SplitEase password",
       fromName: "SplitEase",
       text:
-        `Enter this ${digits}-digit code in the SplitEase app to choose a new password: ${otp}\n\n` +
+        `Enter this ${digits}-digit code in the SplitEase app to create a password: ${otp}\n\n` +
         "This code expires soon. If you did not request a password reset, you can ignore this email.",
       html:
         "<h2>Reset your SplitEase password</h2>" +
-        `<p>Enter this <strong>${digits}-digit</strong> code in the SplitEase app to choose a new password:</p>` +
+        `<p>Enter this <strong>${digits}-digit</strong> code in the SplitEase app to create a password:</p>` +
         `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
         "<p>This code expires soon. If you did not request a password reset, you can ignore this email.</p>",
     };
