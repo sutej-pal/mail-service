@@ -33,7 +33,10 @@ async function sendMail({ to, subject, text, html, fromName }) {
   const mailFrom = process.env.MAIL_FROM;
   const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
 
-  console.log(`mail From=${from} subject=${subject}`);
+  // Vercel Runtime Logs: filter for "[splitease-mail]"
+  console.info(
+    `[splitease-mail] sending from=${from} to=${to} subject=${subject}`,
+  );
 
   const info = await getTransporter().sendMail({
     from,
@@ -42,6 +45,10 @@ async function sendMail({ to, subject, text, html, fromName }) {
     text,
     html,
   });
+
+  console.info(
+    `[splitease-mail] sent from=${from} to=${to} subject=${subject} messageId=${info.messageId}`,
+  );
 
   return { messageId: info.messageId };
 }
