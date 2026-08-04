@@ -33,6 +33,8 @@ async function sendMail({ to, subject, text, html, fromName }) {
   const mailFrom = process.env.MAIL_FROM;
   const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
 
+  console.log(`mail From=${from} subject=${subject}`);
+
   const info = await getTransporter().sendMail({
     from,
     to,
