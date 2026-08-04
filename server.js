@@ -322,10 +322,6 @@ app.post("/supabase/send-email-hook", async (req, res) => {
     const token = String(emailData.token || "").trim();
     const mail = buildOtpMail({ purpose, token });
 
-    console.info(
-      `[splitease-mail] hook action=${purpose} to=${to} subject=${mail.subject}`,
-    );
-
     await sendMail({
       to,
       subject: mail.subject,
