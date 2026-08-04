@@ -15,7 +15,7 @@ Known-good baseline: commit [`b04a42d`](https://github.com/sutej-pal/mail-servic
 ## Local setup (Nodemailer / SMTP)
 
 1. Copy `.env.example` to `.env`.
-2. Set Gmail (or other) SMTP vars and `MAIL_FROM`.
+2. Set Gmail (or other) SMTP vars (`SMTP_USER` is also the From address).
 3. Run:
 
 ```bash
@@ -35,7 +35,7 @@ Supabase Free Auth email is rate-limited during development. SplitEase Server se
 - Runtime: Node
 - Build: `npm install`
 - Start: `npm start`
-- Env: see `.env.example` (`MAIL_API_KEY`, `MAIL_FROM`, SMTP_*)
+- Env: see `.env.example` (`MAIL_API_KEY`, SMTP_*)
 
 ## API
 

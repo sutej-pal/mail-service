@@ -5,7 +5,7 @@ let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
 
-  const required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM"];
+  const required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS"];
   const missing = required.filter((key) => !process.env[key]);
   if (missing.length > 0) {
     throw new Error(`Missing env vars: ${missing.join(", ")}`);
@@ -26,11 +26,12 @@ function getTransporter() {
 
 /**
  * Send an email via SMTP (nodemailer).
+ * From address is SMTP_USER (optional display name via fromName).
  * @param {{ to: string, subject: string, text?: string, html?: string, fromName?: string }} options
  * @returns {Promise<{ messageId: string }>}
  */
 async function sendMail({ to, subject, text, html, fromName }) {
-  const mailFrom = process.env.MAIL_FROM;
+  const mailFrom = process.env.SMTP_USER;
   const from = fromName ? `"${fromName}" <${mailFrom}>` : mailFrom;
 
   const info = await getTransporter().sendMail({
