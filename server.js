@@ -290,7 +290,11 @@ app.post("/supabase/send-email-hook", async (req, res) => {
   try {
     const payload =
       typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
+
+    console.info("[splitease-mail] send-email-hook received");
+
     if (!verifySupabaseWebhook(req, payload)) {
+      console.warn("[splitease-mail] send-email-hook rejected: invalid signature");
       return res.status(401).json({
         error: {
           http_code: 401,
@@ -305,6 +309,7 @@ app.post("/supabase/send-email-hook", async (req, res) => {
     const emailData = data.email_data || {};
     const to = String(user.email || "").trim();
     if (!to) {
+      console.warn("[splitease-mail] send-email-hook missing user.email");
       return res.status(400).json({
         error: {
           http_code: 400,
@@ -317,8 +322,8 @@ app.post("/supabase/send-email-hook", async (req, res) => {
     const token = String(emailData.token || "").trim();
     const mail = buildOtpMail({ purpose, token });
 
-    console.log(
-      `supabase-send-email-hook → send-mail to=${to} action=${purpose}`,
+    console.info(
+      `[splitease-mail] hook action=${purpose} to=${to} subject=${mail.subject}`,
     );
 
     await sendMail({
@@ -332,7 +337,7 @@ app.post("/supabase/send-email-hook", async (req, res) => {
     // Supabase expects an empty JSON object on success.
     return res.status(200).json({});
   } catch (error) {
-    console.error("supabase send-email-hook failed:", error);
+    console.error("[splitease-mail] send-email-hook failed:", error);
     return res.status(500).json({
       error: {
         http_code: 500,
