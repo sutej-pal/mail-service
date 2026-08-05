@@ -4,12 +4,15 @@ const crypto = require("node:crypto");
 require("dotenv").config();
 
 const { sendMail } = require("./mailService");
+const { generalLimiter, sendMailLimiter } = require("./rateLimit");
 
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true }));
 app.use(express.json({ limit: "1mb" }));
+app.use(generalLimiter);
 
 const sendEmailHookSecretRaw = (process.env.SEND_EMAIL_HOOK_SECRET || "").trim();
 const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
@@ -241,7 +244,7 @@ app.get("/.well-known/assetlinks.json", (_req, res) => {
  * Body (transactional): { to, subject, text?, html?, fromName? }
  * Body (OTP):           { to, otp, purpose?: "signup"|"login", fromName? }
  */
-app.post("/send-mail", async (req, res) => {
+app.post("/send-mail", sendMailLimiter, async (req, res) => {
   try {
     const body = req.body || {};
     const to = String(body.to || "").trim();
@@ -286,7 +289,7 @@ app.post("/send-mail", async (req, res) => {
  * Supabase Auth "Send Email" hook.
  * Builds OTP content then delivers through mailService.
  */
-app.post("/supabase/send-email-hook", async (req, res) => {
+app.post("/supabase/send-email-hook", sendMailLimiter, async (req, res) => {
   try {
     const payload =
       typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});

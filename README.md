@@ -44,6 +44,17 @@ Supabase Free Auth email is rate-limited during development. SplitEase Server se
 - `POST /send-mail` — app transactional mail (`x-api-key` if `MAIL_API_KEY` set)
 - `POST /supabase/send-email-hook` — Supabase Auth Send Email hook
 
+### Rate limiting
+
+In-memory per-IP limits (see `.env.example`):
+
+| Scope | Default | Env |
+| --- | --- | --- |
+| All routes | 120 / 15 min | `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` |
+| `/send-mail` + send-email hook | 10 / 15 min (IP + recipient) | `RATE_LIMIT_SEND_MAIL_MAX` |
+
+Exceeded requests get `429` with `RateLimit-*` headers. On multi-instance hosts (e.g. Vercel), each instance has its own counter — tighten `RATE_LIMIT_SEND_MAIL_MAX` or add a shared store if you need a hard global cap.
+
 ## GitHub rename (optional)
 
 If the GitHub repo is still `sutej-pal/mail-service`, rename it to `splitease-server` and:
