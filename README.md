@@ -40,9 +40,13 @@ Supabase Free Auth email is rate-limited during development. SplitEase Server se
 ## API
 
 - `GET /health`
+- `GET /privacy` — Privacy Policy HTML (also `/privacy.html`)
+- `GET /terms` — Terms of Service HTML (also `/terms.html`)
 - `GET /invite/:token` — open app / Play bridge + `/.well-known/assetlinks.json`
 - `POST /send-mail` — app transactional mail (`x-api-key` if `MAIL_API_KEY` set)
 - `POST /supabase/send-email-hook` — Supabase Auth Send Email hook
+
+Legal HTML lives in [`legal/`](legal/). The Android app links to `https://splitease.app/terms` and `https://splitease.app/privacy` — point that host at this server (or mirror these files) before Play submission.
 
 ### Rate limiting
 

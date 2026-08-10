@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 require("dotenv").config();
 
 const { sendMail } = require("./mailService");
@@ -13,6 +15,20 @@ app.set("trust proxy", 1);
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true }));
 app.use(express.json({ limit: "1mb" }));
 app.use(generalLimiter);
+
+const legalDir = path.join(__dirname, "legal");
+
+/**
+ * Serves a static legal HTML page from /legal.
+ * @param {string} fileName File under legal/
+ */
+function sendLegalPage(res, fileName) {
+  const filePath = path.join(legalDir, fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).type("text").send("Not found");
+  }
+  return res.status(200).type("html").send(fs.readFileSync(filePath, "utf8"));
+}
 
 const sendEmailHookSecretRaw = (process.env.SEND_EMAIL_HOOK_SECRET || "").trim();
 const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
@@ -144,6 +160,15 @@ function verifySupabaseWebhook(req, rawBody) {
 
 app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true, service: "splitease-server" });
+});
+
+/** Public legal pages (Play Store + in-app signup links). */
+app.get(["/privacy", "/privacy.html"], (_req, res) => {
+  sendLegalPage(res, "privacy.html");
+});
+
+app.get(["/terms", "/terms.html"], (_req, res) => {
+  sendLegalPage(res, "terms.html");
 });
 
 /**
