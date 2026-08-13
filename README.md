@@ -46,7 +46,9 @@ Supabase Free Auth email is rate-limited during development. SplitEase Server se
 - `POST /send-mail` — app transactional mail (`x-api-key` if `MAIL_API_KEY` set)
 - `POST /supabase/send-email-hook` — Supabase Auth Send Email hook
 
-Legal HTML lives in [`legal/`](legal/). The Android app links to:
+Legal HTML lives in [`legal/`](legal/). **All outbound email copy/HTML** lives in [`mail-templates/`](mail-templates/) — edit there, then redeploy.
+
+The Android app links to:
 `https://splitease-server-eight.vercel.app/terms` and
 `https://splitease-server-eight.vercel.app/privacy`.
 

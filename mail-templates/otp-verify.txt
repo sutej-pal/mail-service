@@ -1,0 +1,3 @@
+Your SplitEase verification code is: {{otp}}
+
+Enter it in the app. If you did not request this, you can ignore this email.

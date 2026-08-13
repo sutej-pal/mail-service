@@ -1,0 +1,8 @@
+Welcome to SplitEase!
+
+You're almost set up. Enter this {{digits}}-digit code in the app to verify your email and activate your account:
+{{otp}}
+
+This code expires in 10 minutes.
+
+If you didn't create a SplitEase account, you can safely ignore this email.

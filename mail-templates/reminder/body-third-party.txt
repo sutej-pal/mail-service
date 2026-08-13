@@ -1,0 +1,6 @@
+Hello {{debtorName}} and {{creditorName}},
+
+This is a reminder that {{debtorName}} owes {{creditorName}} {{amount}} for expenses in the SplitEase group "{{groupName}}". Please open SplitEase to review and settle up.
+
+Thank you,
+{{senderName}}

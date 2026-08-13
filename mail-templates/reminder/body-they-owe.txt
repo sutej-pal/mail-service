@@ -1,0 +1,6 @@
+Hello {{counterpartyName}},
+
+This is a reminder that you owe me {{amount}} for expenses in the SplitEase group "{{groupName}}". Please tap the button below to review our activity.
+
+Thank you,
+{{senderName}}

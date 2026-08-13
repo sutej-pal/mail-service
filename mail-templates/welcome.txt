@@ -1,0 +1,5 @@
+Hi {{displayName}},
+
+Welcome to SplitEase. Your onboarding has started.
+
+Finish setup in the app to start tracking shared expenses.

@@ -1,0 +1,4 @@
+{{inviterName}} invited you to join "{{groupName}}" on SplitEase.
+
+Join here:
+{{link}}

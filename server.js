@@ -6,6 +6,7 @@ const path = require("node:path");
 require("dotenv").config();
 
 const { sendMail } = require("./mailService");
+const { buildOtpMail, buildNamedMail } = require("./mailTemplates");
 const { generalLimiter, sendMailLimiter } = require("./rateLimit");
 
 const app = express();
@@ -35,262 +36,6 @@ const sendEmailHookSecret = sendEmailHookSecretRaw.replace(/^v1,whsec_/, "");
 
 function looksLikeOtpToken(token) {
   return typeof token === "string" && /^\d{4,10}$/.test(token.trim());
-}
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function buildOtpHtmlTemplate({
-  title,
-  intro,
-  otp,
-  expiryNote,
-  footerNote,
-  icon,
-  showWhatsNext,
-}) {
-  const safeTitle = escapeHtml(title);
-  const safeIntro = escapeHtml(intro);
-  const safeOtp = escapeHtml(otp);
-  const safeExpiry = escapeHtml(expiryNote);
-  const safeFooter = escapeHtml(footerNote);
-  const safeIcon = escapeHtml(icon);
-  const whatsNextSection = showWhatsNext
-    ? `
-          <tr>
-            <td style="padding:32px 40px 0 40px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#FAFAFD; border-radius:10px;">
-                <tr>
-                  <td style="padding:20px 24px;">
-                    <p style="margin:0 0 12px 0; font-size:12px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; color:#5B5FEF;">What's next</p>
-                    <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-                      <tr>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70; vertical-align:top; width:20px;">1.</td>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70;">Enter the code above in the app</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70; vertical-align:top;">2.</td>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70;">Set up your profile</td>
-                      </tr>
-                      <tr>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70; vertical-align:top;">3.</td>
-                        <td style="padding:4px 0; font-size:14px; color:#5c5f70;">Create or join a group to start splitting expenses</td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`
-    : "";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${safeTitle}</title>
-</head>
-<body style="margin:0; padding:0; background-color:#f2f4f7; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f2f4f7; padding:40px 0;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:12px; overflow:hidden;">
-          <tr>
-            <td align="center" style="padding:36px 40px 0 40px;">
-              <table role="presentation" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="width:36px; height:36px; background-color:#5B5FEF; border-radius:9px; text-align:center; line-height:36px;">
-                    <span style="color:#ffffff; font-size:18px; font-weight:700;">S</span>
-                  </td>
-                  <td style="padding-left:8px;">
-                    <span style="font-size:20px; font-weight:700; color:#1a1a2e;">SplitEase</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:32px 40px 0 40px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" style="width:64px; height:64px; background-color:#EEF0FF; border-radius:50%;">
-                <tr>
-                  <td align="center" valign="middle" style="font-size:28px;">${safeIcon}</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:20px 40px 0 40px;">
-              <h1 style="margin:0; font-size:22px; font-weight:700; color:#1a1a2e;">${safeTitle}</h1>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:12px 40px 0 40px;">
-              <p style="margin:0; font-size:15px; line-height:22px; color:#5c5f70;">
-                ${safeIntro}
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:28px 40px 0 40px;">
-              <table role="presentation" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="background-color:#F7F7FC; border:1px solid #E4E4F0; border-radius:10px; padding:18px 36px;">
-                    <span style="font-size:32px; font-weight:700; letter-spacing:8px; color:#1a1a2e; font-family:'Courier New', monospace;">${safeOtp}</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:20px 40px 0 40px;">
-              <p style="margin:0; font-size:13px; color:#9296a6;">
-                ${safeExpiry}
-              </p>
-            </td>
-          </tr>
-${whatsNextSection}
-          <tr>
-            <td style="padding:32px 40px 0 40px;">
-              <div style="border-top:1px solid #EEEEF3;"></div>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:24px 40px 36px 40px;">
-              <p style="margin:0; font-size:13px; line-height:20px; color:#9296a6;">
-                ${safeFooter}
-              </p>
-            </td>
-          </tr>
-        </table>
-        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="margin-top:24px;">
-          <tr>
-            <td align="center">
-              <p style="margin:0; font-size:12px; color:#a7aab8;">&copy; ${new Date().getFullYear()} SplitEase. All rights reserved.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-}
-
-/**
- * Builds OTP / auth email content for /send-mail and the Supabase hook.
- * @param {string} purpose signup | login | magiclink | email | recovery | invite | auth
- * @param {string} token OTP digits from Supabase
- */
-function buildOtpMail({ purpose, token }) {
-  const action = String(purpose || "auth").trim().toLowerCase();
-  const otp = String(token || "").trim();
-  const isOtp = looksLikeOtpToken(otp);
-  const digits = isOtp ? otp.length : 6;
-
-  const isSignup =
-    action === "signup" || action === "confirm" || action === "confirmation";
-  const isLogin =
-    action === "login" ||
-    action === "magiclink" ||
-    action === "email" ||
-    action === "otp";
-  const isRecovery = action === "recovery" || action === "reset";
-
-  if (isRecovery && isOtp) {
-    return {
-      subject: "Reset your SplitEase password",
-      fromName: "SplitEase",
-      text:
-        `Reset your SplitEase password\n\n` +
-        `Enter this ${digits}-digit code in the SplitEase app to create a new password:\n` +
-        `${otp}\n\n` +
-        `This code expires soon.\n\n` +
-        "If you did not request a password reset, you can safely ignore this email - your account is still secure.",
-      html: buildOtpHtmlTemplate({
-        title: "Reset your password",
-        intro: "Enter this 6-digit code in the SplitEase app to create a new password.",
-        otp,
-        expiryNote: "⏱ This code expires soon.",
-        footerNote:
-          "If you did not request a password reset, you can safely ignore this email - your account is still secure.",
-        icon: "🔒",
-        showWhatsNext: false,
-      }),
-    };
-  }
-
-  if (isSignup && isOtp) {
-    return {
-      subject: "Confirm your SplitEase account",
-      fromName: "SplitEase",
-      text:
-        `Welcome to SplitEase!\n\n` +
-        `You're almost set up. Enter this ${digits}-digit code in the app to verify your email and activate your account:\n` +
-        `${otp}\n\n` +
-        "This code expires in 10 minutes.\n\n" +
-        "If you didn't create a SplitEase account, you can safely ignore this email.",
-      html: buildOtpHtmlTemplate({
-        title: "Welcome to SplitEase!",
-        intro:
-          "You're almost set up. Enter this code in the app to verify your email and activate your account.",
-        otp,
-        expiryNote: "⏱ This code expires in 10 minutes.",
-        footerNote:
-          "If you didn't create a SplitEase account, you can safely ignore this email.",
-        icon: "👋",
-        showWhatsNext: true,
-      }),
-    };
-  }
-
-  if (isLogin && isOtp) {
-    return {
-      subject: "Your SplitEase sign-in code",
-      fromName: "SplitEase",
-      text:
-        `Enter this ${digits}-digit verification code in the SplitEase app to finish signing in: ${otp}\n\n` +
-        "This code expires soon. If you did not try to sign in, you can ignore this email.",
-      html:
-        "<h2>Sign in to SplitEase</h2>" +
-        `<p>Enter this <strong>${digits}-digit</strong> verification code in the SplitEase app to finish signing in:</p>` +
-        `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
-        "<p>This code expires soon. If you did not try to sign in, you can ignore this email.</p>",
-    };
-  }
-
-  if (isOtp) {
-    return {
-      subject: "Your SplitEase verification code",
-      fromName: "SplitEase",
-      text:
-        `Your SplitEase verification code is: ${otp}\n\n` +
-        "Enter it in the app. If you did not request this, you can ignore this email.",
-      html:
-        "<h2>SplitEase verification</h2>" +
-        `<p>Your verification code:</p>` +
-        `<p style="font-size:28px;letter-spacing:6px;font-weight:bold;font-family:monospace;">${otp}</p>` +
-        "<p>Enter it in the app. If you did not request this, you can ignore this email.</p>",
-    };
-  }
-
-  const label = action || "auth";
-  return {
-    subject: "SplitEase authentication",
-    fromName: "SplitEase",
-    text:
-      `A SplitEase authentication event was requested (${label}).` +
-      "\n\nIf this wasn't you, you can ignore this email.",
-    html:
-      `<h2>SplitEase authentication</h2><p>A SplitEase authentication event was requested (<strong>${label}</strong>).</p>` +
-      "<p>If this wasn't you, you can ignore this email.</p>",
-  };
 }
 
 function verifySupabaseWebhook(req, rawBody) {
@@ -429,13 +174,18 @@ app.get("/.well-known/assetlinks.json", (_req, res) => {
 // TODO: re-enable MAIL_API_KEY / x-api-key auth once mail flow is stable (see TODO.md).
 /**
  * Body (transactional): { to, subject, text?, html?, fromName? }
- * Body (OTP):           { to, otp, purpose?: "signup"|"login", fromName? }
+ * Body (named template): { to, template, vars?, subject?, fromName? }
+ * Body (OTP):           { to, otp, purpose?: "signup"|"login"|"recovery", fromName? }
+ *
+ * Templates live in mail-templates/ (see mail-templates/README.md).
  */
 app.post("/send-mail", sendMailLimiter, async (req, res) => {
   try {
     const body = req.body || {};
     const to = String(body.to || "").trim();
     const otp = body.otp != null ? String(body.otp).trim() : "";
+    const templateId =
+      body.template != null ? String(body.template).trim() : "";
     let subject = body.subject;
     let text = body.text;
     let html = body.html;
@@ -450,6 +200,16 @@ app.post("/send-mail", sendMailLimiter, async (req, res) => {
       text = text || built.text;
       html = html || built.html;
       fromName = fromName || built.fromName;
+    } else if (templateId) {
+      const vars =
+        body.vars && typeof body.vars === "object" && !Array.isArray(body.vars)
+          ? body.vars
+          : {};
+      const built = buildNamedMail(templateId, vars);
+      subject = subject || built.subject;
+      text = text || built.text;
+      html = html || built.html;
+      fromName = fromName || built.fromName;
     }
 
     if (!to || !subject || (!text && !html)) {
@@ -457,7 +217,7 @@ app.post("/send-mail", sendMailLimiter, async (req, res) => {
         ok: false,
         error:
           "to, subject and at least one of text/html are required " +
-          "(or pass to + otp to send a verification code)",
+          "(or pass to + otp, or to + template)",
       });
     }
 
