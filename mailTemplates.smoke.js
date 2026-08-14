@@ -12,7 +12,7 @@ const {
 function assertCardLayout(html) {
   assert.match(html, /SplitEase/);
   assert.match(html, /box-shadow:0 2px 10px/);
-  assert.match(html, /background-color:#5B5FEF/);
+  assert.match(html, /\/assets\/splitease-icon\.png/);
   assert.match(html, /background-color:#EEF0FF/);
 }
 
@@ -68,5 +68,25 @@ assert.doesNotMatch(reminder.html, /<script>owned/);
 assert.match(reminder.html, /Line2/);
 assert.match(reminder.html, /Note/);
 assertCardLayout(reminder.html);
+
+const previousPublicBase = process.env.PUBLIC_BASE_URL;
+const previousVercelUrl = process.env.VERCEL_URL;
+delete process.env.PUBLIC_BASE_URL;
+process.env.VERCEL_URL = "splitease-server-preview-abc123.vercel.app";
+const previewLogo = buildOtpMail({ purpose: "signup", token: "999999" });
+assert.match(
+  previewLogo.html,
+  /https:\/\/splitease-server-eight\.vercel\.app\/assets\/splitease-icon\.png/,
+);
+if (previousPublicBase === undefined) {
+  delete process.env.PUBLIC_BASE_URL;
+} else {
+  process.env.PUBLIC_BASE_URL = previousPublicBase;
+}
+if (previousVercelUrl === undefined) {
+  delete process.env.VERCEL_URL;
+} else {
+  process.env.VERCEL_URL = previousVercelUrl;
+}
 
 console.log("mailTemplates.smoke.js OK");

@@ -86,6 +86,31 @@ function sanitizeHttpUrl(value) {
   return "";
 }
 
+/** Stable production host for email asset URLs (must not be a per-deploy Vercel URL). */
+const EMAIL_ASSET_BASE_URL = "https://splitease-server-eight.vercel.app";
+
+/**
+ * Public origin used for assets embedded in outbound email HTML.
+ * Prefer PUBLIC_BASE_URL; otherwise use the stable production host so logos in
+ * sent mail keep working after preview deployments expire.
+ * @returns {string}
+ */
+function publicBaseUrl() {
+  const fromEnv = String(process.env.PUBLIC_BASE_URL || "")
+    .trim()
+    .replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  return EMAIL_ASSET_BASE_URL;
+}
+
+/**
+ * Absolute URL for the SplitEase app icon used in email headers.
+ * @returns {string}
+ */
+function brandLogoUrl() {
+  return `${publicBaseUrl()}/assets/splitease-icon.png`;
+}
+
 /**
  * Replace {{key}} placeholders.
  * Trusted layout fragments use RAW_HTML_KEYS (loaded from disk or built here).
@@ -144,6 +169,7 @@ function buildCardMail(input) {
     "card-layout.html",
     {
       pageTitle: input.pageTitle || input.title,
+      logoUrl: brandLogoUrl(),
       icon: input.icon,
       title: input.title,
       introBlock: buildIntroBlock(input.intro),

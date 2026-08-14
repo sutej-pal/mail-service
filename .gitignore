@@ -28,6 +28,7 @@ coverage/
 temp/
 tmp/
 server.temp.js
+_check_logo.js
 
 .vercel
 .env*

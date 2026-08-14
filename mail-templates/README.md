@@ -6,7 +6,9 @@ Edit files here, then redeploy the server. Do not hardcode email HTML in `server
 
 ## Layout
 
-All emails share the branded card shell in `card-layout.html` (logo, icon, title, content slots, footer). Content is composed in `mailTemplates.js` from small fragments under `fragments/`.
+All emails share the branded card shell in `card-layout.html` (app icon logo, emoji icon, title, content slots, footer). Content is composed in `mailTemplates.js` from small fragments under `fragments/`.
+
+The header logo is served from `GET /assets/splitease-icon.png` (file in `assets/`). Outbound HTML uses `PUBLIC_BASE_URL` when set, otherwise the stable production host (`splitease-server-eight.vercel.app`). Per-deploy `VERCEL_URL` is intentionally not used for logos so sent mail keeps working after preview deployments expire.
 
 | Path | Used for |
 | --- | --- |

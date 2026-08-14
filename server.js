@@ -15,7 +15,6 @@ app.set("trust proxy", 1);
 
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || true }));
 app.use(express.json({ limit: "1mb" }));
-app.use(generalLimiter);
 
 const legalDir = path.join(__dirname, "legal");
 
@@ -77,6 +76,18 @@ app.get(["/privacy", "/privacy.html"], (_req, res) => {
 app.get(["/terms", "/terms.html"], (_req, res) => {
   sendLegalPage(res, "terms.html");
 });
+
+/** Brand assets for email HTML (absolute URLs required by mail clients). */
+app.get("/assets/splitease-icon.png", (_req, res) => {
+  const filePath = path.join(__dirname, "assets", "splitease-icon.png");
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).type("text").send("Not found");
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.status(200).type("png").send(fs.readFileSync(filePath));
+});
+
+app.use(generalLimiter);
 
 /**
  * Browser invite bridge:
