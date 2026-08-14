@@ -6,6 +6,18 @@ const templatesDir = path.join(__dirname, "mail-templates");
 
 const fileCache = new Map();
 
+/** Keys interpolated as trusted HTML fragments (never user-supplied). */
+const RAW_HTML_KEYS = new Set([
+  "whatsNextBlock",
+  "bodyHtml",
+  "noteBlockHtml",
+  "noteHtml",
+  "introBlock",
+  "mainBlock",
+  "extraBlock",
+  "linkHref",
+]);
+
 /**
  * @param {string} relativePath Path under mail-templates/
  * @returns {string}
@@ -76,8 +88,7 @@ function sanitizeHttpUrl(value) {
 
 /**
  * Replace {{key}} placeholders.
- * Trusted layout fragments: whatsNextBlock only (loaded from disk).
- * Keys ending in Html are escaped unless allowRawHtmlKeys is set (unused for user input).
+ * Trusted layout fragments use RAW_HTML_KEYS (loaded from disk or built here).
  * @param {string} source
  * @param {Record<string, unknown>} vars
  * @param {{ html?: boolean }} [options]
@@ -88,10 +99,7 @@ function interpolate(source, vars, options = {}) {
     const raw = vars[key];
     if (raw == null) return "";
     if (!htmlMode) return String(raw);
-    // Trusted static fragment from otp-whats-next.html only.
-    if (key === "whatsNextBlock") return String(raw);
-    // Pre-built safe HTML fragments produced by this module (already escaped).
-    if (key === "bodyHtml" || key === "noteBlockHtml") return String(raw);
+    if (RAW_HTML_KEYS.has(key)) return String(raw);
     return escapeHtml(raw);
   });
 }
@@ -103,6 +111,49 @@ function interpolate(source, vars, options = {}) {
  */
 function renderFile(relativePath, vars, options = {}) {
   return interpolate(readTemplateFile(relativePath), vars, options);
+}
+
+/**
+ * Optional intro paragraph row for the card layout.
+ * @param {string} intro
+ * @returns {string}
+ */
+function buildIntroBlock(intro) {
+  const text = String(intro ?? "").trim();
+  if (!text) return "";
+  return renderFile("fragments/intro-block.html", { intro: text }, { html: true });
+}
+
+/**
+ * Branded card shell shared by every SplitEase email.
+ * @param {{
+ *   pageTitle: string,
+ *   icon: string,
+ *   title: string,
+ *   intro?: string,
+ *   mainBlock?: string,
+ *   extraBlock?: string,
+ *   footerNote: string,
+ *   year?: string,
+ * }} input
+ * @returns {string}
+ */
+function buildCardMail(input) {
+  const year = input.year || String(new Date().getFullYear());
+  return renderFile(
+    "card-layout.html",
+    {
+      pageTitle: input.pageTitle || input.title,
+      icon: input.icon,
+      title: input.title,
+      introBlock: buildIntroBlock(input.intro),
+      mainBlock: input.mainBlock || "",
+      extraBlock: input.extraBlock || "",
+      footerNote: input.footerNote,
+      year,
+    },
+    { html: true },
+  );
 }
 
 /**
@@ -143,41 +194,60 @@ function buildOtpMail({ purpose, token }) {
     year: String(new Date().getFullYear()),
   };
 
-  if (key === "auth" || !entry.useLayout) {
+  const text = renderFile(entry.textFile, vars);
+
+  const intro =
+    entry.introTemplate != null
+      ? interpolate(entry.introTemplate, vars)
+      : entry.intro;
+
+  if (!entry.useLayout) {
     return {
       subject: entry.subject,
       fromName: entry.fromName,
-      text: renderFile(entry.textFile, vars),
-      html:
-        `<h2>SplitEase authentication</h2>` +
-        `<p>A SplitEase authentication event was requested (<strong>${escapeHtml(
-          vars.label,
-        )}</strong>).</p>` +
-        "<p>If this wasn't you, you can ignore this email.</p>",
+      text,
+      html: buildCardMail({
+        pageTitle: entry.pageTitle || entry.title,
+        icon: entry.icon,
+        title: entry.title,
+        intro,
+        footerNote: entry.footerNote,
+        year: vars.year,
+      }),
     };
   }
 
-  const whatsNextBlock = entry.showWhatsNext
-    ? readTemplateFile("otp-whats-next.html")
+  const mainBlock = isOtp
+    ? renderFile(
+        "fragments/otp-code-block.html",
+        {
+          otp,
+          expiryNote: entry.expiryNote,
+        },
+        { html: true },
+      )
     : "";
-  const html = renderFile(
-    "otp-layout.html",
-    {
-      ...vars,
-      title: entry.title,
-      intro: entry.intro,
-      expiryNote: entry.expiryNote,
-      footerNote: entry.footerNote,
-      icon: entry.icon,
-      whatsNextBlock,
-    },
-    { html: true },
-  );
+
+  const extraBlock =
+    entry.showWhatsNext && key === "signup"
+      ? readTemplateFile("otp-whats-next.html")
+      : "";
+
+  const html = buildCardMail({
+    pageTitle: entry.pageTitle || entry.title,
+    icon: entry.icon,
+    title: entry.title,
+    intro,
+    mainBlock,
+    extraBlock,
+    footerNote: entry.footerNote,
+    year: vars.year,
+  });
 
   return {
     subject: entry.subject,
     fromName: entry.fromName,
-    text: renderFile(entry.textFile, vars),
+    text,
     html,
   };
 }
@@ -192,7 +262,8 @@ function prepareTransactionalVars(templateId, vars) {
   const out = { ...vars };
 
   if (templateId === "invite-friend" || templateId === "invite-group") {
-    out.link = sanitizeHttpUrl(vars.link);
+    out.linkHref = sanitizeHttpUrl(vars.link);
+    out.link = out.linkHref;
     if (vars.groupName != null) {
       out.groupName = sanitizeHeader(vars.groupName);
     }
@@ -202,16 +273,12 @@ function prepareTransactionalVars(templateId, vars) {
   }
 
   if (templateId === "reminder") {
-    // Always rebuild HTML from plain text — never trust client bodyHtml/noteBlockHtml.
     const body = String(vars.body ?? "");
     const note = String(vars.note ?? "").trim();
     out.body = body;
     out.note = note;
     out.bodyHtml = textToHtml(body);
-    out.noteBlockHtml = note
-      ? `<hr style="border:none;border-top:1px solid #ddd;margin:24px 0"/>` +
-        `<p style="color:#555">${textToHtml(note)}</p>`
-      : "";
+    out.noteHtml = note ? textToHtml(note) : "";
   }
 
   if (templateId === "welcome" && vars.displayName != null) {
@@ -219,6 +286,86 @@ function prepareTransactionalVars(templateId, vars) {
   }
 
   return out;
+}
+
+/**
+ * Resolve catalog copy that may use {{var}} placeholders.
+ * @param {string | undefined} template
+ * @param {Record<string, unknown>} vars
+ * @returns {string}
+ */
+function resolveCopy(template, vars) {
+  if (template == null) return "";
+  return interpolate(template, vars);
+}
+
+/**
+ * HTML body for a named transactional template using the shared card layout.
+ * @param {string} templateId
+ * @param {Record<string, unknown>} vars
+ */
+function buildTransactionalHtml(templateId, vars) {
+  const entry = catalog.transactional[templateId];
+  if (!entry) {
+    throw new Error(`Unknown mail template: ${templateId}`);
+  }
+
+  const title =
+    entry.titleTemplate != null
+      ? resolveCopy(entry.titleTemplate, vars)
+      : entry.title || "";
+  const intro =
+    entry.introTemplate != null
+      ? resolveCopy(entry.introTemplate, vars)
+      : entry.intro != null
+        ? String(entry.intro)
+        : "";
+
+  let mainBlock = "";
+  let extraBlock = "";
+
+  if (templateId === "invite-friend" || templateId === "invite-group") {
+    if (vars.linkHref) {
+      mainBlock = renderFile(
+        "fragments/invite-cta-block.html",
+        {
+          linkHref: vars.linkHref,
+          link: vars.linkHref,
+        },
+        { html: true },
+      );
+    }
+  }
+
+  if (templateId === "reminder") {
+    mainBlock = renderFile(
+      "fragments/reminder-body-block.html",
+      { bodyHtml: vars.bodyHtml },
+      { html: true },
+    );
+    if (vars.noteHtml) {
+      extraBlock = renderFile(
+        "fragments/reminder-note-block.html",
+        { noteHtml: vars.noteHtml },
+        { html: true },
+      );
+    }
+  }
+
+  if (templateId === "welcome" && entry.showWhatsNext) {
+    extraBlock = readTemplateFile("fragments/welcome-whats-next.html");
+  }
+
+  return buildCardMail({
+    pageTitle: resolveCopy(entry.pageTitle || title, vars),
+    icon: entry.icon,
+    title,
+    intro,
+    mainBlock,
+    extraBlock,
+    footerNote: entry.footerNote,
+    year: String(new Date().getFullYear()),
+  });
 }
 
 /**
@@ -248,10 +395,7 @@ function buildNamedMail(templateId, vars = {}) {
       ? String(safeVars.text)
       : undefined;
 
-  let html;
-  if (entry.htmlFile) {
-    html = renderFile(entry.htmlFile, safeVars, { html: true });
-  }
+  const html = buildTransactionalHtml(id, safeVars);
 
   return {
     subject,
@@ -271,6 +415,7 @@ function clearTemplateCache() {
 module.exports = {
   buildOtpMail,
   buildNamedMail,
+  buildCardMail,
   escapeHtml,
   sanitizeHttpUrl,
   sanitizeHeader,
